@@ -1,3 +1,5 @@
+#!/usr/bin/env runghc
+
 {-# language FlexibleContexts #-}
 {-# language GeneralizedNewtypeDeriving #-}
 {-# language LambdaCase #-}
