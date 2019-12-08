@@ -147,6 +147,22 @@ data Op addr
   -- | Write output found at addr.
   | Output (Mode, addr)
 
+  -- | Set instruction pointer to second parameter if first parameter
+  -- is non-zero. Otherwise do nothing.
+  | JumpIfTrue (Mode, addr) (Mode, addr)
+
+  -- | Set instruction pointer to second parameter if first parameter
+  -- is zero. Otherwise do nothing.
+  | JumpIfFalse (Mode, addr) (Mode, addr)
+
+  -- | Compare first and second parameters. Write results to third
+  -- parameter. If p1 < p2 then write 1 else write 0.
+  | LessThan (Mode, addr) (Mode, addr) addr
+
+  -- | Compare first and second parameters. Write results to third
+  -- parameter. If p1 = p2 then write 1 else write 0.
+  | Equals (Mode, addr) (Mode, addr) addr
+
   -- | Stop execution.
   | Halt
 
@@ -212,6 +228,14 @@ decodeOpAt ip = do
           pure (Input (ip+1), Just (ip+2))
         4 ->
           pure (Output (par 1), Just (ip+2))
+        5 ->
+          pure (JumpIfTrue (par 1) (par 2), Just (ip+3))
+        6 ->
+          pure (JumpIfFalse (par 1) (par 2), Just (ip+3))
+        7 ->
+          pure (LessThan (par 1) (par 2) (ip+3), Just (ip+4))
+        8 ->
+          pure (Equals (par 1) (par 2) (ip+3), Just (ip+4))
         99 ->
           pure (Halt, Nothing)
         _ ->
@@ -219,16 +243,18 @@ decodeOpAt ip = do
           "Invalid opcode " ++ show opcode ++ "@"
           ++ show ip
 
-data AndThen = Continue | Stop
+data AndThen addr = Continue | Stop | Goto addr
 
 interpretOp ::
   ( Coercible addr val
+  , Eq val
   , Input m val
   , Monad m
   , Num val
   , Output m val
+  , Ord val
   , Store addr val m
-  ) => Op addr -> m AndThen
+  ) => Op addr -> m (AndThen addr)
 interpretOp = \case
   Add r1 r2 w ->
     binOp (+) r1 r2 w $> Continue
@@ -238,6 +264,30 @@ interpretOp = \case
     (putIndir addr =<< input) $> Continue
   Output addr ->
     (output =<< getModal addr) $> Continue
+  JumpIfTrue test ip -> do
+    val <-
+      getModal test
+    if val == 0
+      then pure Continue
+      else Goto . coerce <$> getModal ip
+  JumpIfFalse test ip -> do
+    val <-
+      getModal test
+    if val == 0
+      then Goto . coerce <$> getModal ip
+      else pure Continue
+  LessThan p1 p2 w -> do
+    v1 <-
+      getModal p1
+    v2 <-
+      getModal p2
+    putIndir w (if v1 < v2 then 1 else 0) $> Continue
+  Equals p1 p2 w -> do
+    v1 <-
+      getModal p1
+    v2 <-
+      getModal p2
+    putIndir w (if v1 == v2 then 1 else 0) $> Continue
   Halt ->
     pure Stop
 
@@ -267,6 +317,9 @@ execute ip0 =
 
         (Stop, Nothing) ->
           pure ()
+
+        (Goto ip, _) ->
+          decodeOpAt ip >>= go
 
         -- These two error modes should be theoretical; they only
         -- surface if 'decodeOpAt' and 'interpretOp' are mismatched.
