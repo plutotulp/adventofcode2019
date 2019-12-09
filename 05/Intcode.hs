@@ -347,7 +347,13 @@ data IOEnv addr val =
   }
 
 newtype IOInterpreter addr val a =
-  IOInterpreter { runIOInterpreter :: Reader.ReaderT (IOEnv addr val) (Except.ExceptT String IO) a }
+  IOInterpreter
+  { runIOInterpreter
+    :: Reader.ReaderT
+       (IOEnv addr val)
+       (Except.ExceptT String IO)
+       a
+  }
   deriving
     ( Applicative
     , Functor
@@ -362,7 +368,9 @@ runIOInterpreter'
   -> IOInterpreter addr val ()
   -> IO (Either String ())
 runIOInterpreter' env =
-  Except.runExceptT . flip Reader.runReaderT env .  runIOInterpreter
+  Except.runExceptT
+  . flip Reader.runReaderT env
+  . runIOInterpreter
 
 instance Ix addr => Store addr val (IOInterpreter addr val) where
   get addr = do
@@ -399,7 +407,13 @@ data STEnv s addr val =
   }
 
 newtype STInterpreter s addr val a =
-  STInterpreter { runSTInterpreter :: Reader.ReaderT (STEnv s addr val) (Except.ExceptT String (ST s)) a }
+  STInterpreter
+  { runSTInterpreter
+    :: Reader.ReaderT
+       (STEnv s addr val)
+       (Except.ExceptT String (ST s))
+       a
+  }
   deriving
     ( Applicative
     , Functor
@@ -418,12 +432,19 @@ runSTInterpreter' ::
   ST s (Either String ([val], arr addr val))
 runSTInterpreter' env prog = do
   res <-
-    Except.runExceptT (Reader.runReaderT (runSTInterpreter prog) env)
+    Except.runExceptT
+    (Reader.runReaderT
+      (runSTInterpreter prog)
+      env)
   case res of
     Left err ->
       pure (Left err)
     Right () -> do
-      fmap Right ((,) <$> stEnvStdoutDrain env <*> MArray.freeze (stEnvMem env))
+      outputs <-
+        stEnvStdoutDrain env
+      mem <-
+        MArray.freeze (stEnvMem env)
+      pure (Right (outputs, mem))
 
 mkSTEnv ::
   ( Ix addr
